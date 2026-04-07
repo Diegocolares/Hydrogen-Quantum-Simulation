@@ -1,0 +1,276 @@
+# ============================================================
+# CLEAN SCIENTIFIC GIF — BIGGER + HYDROGEN VISIBLE
+# One-cell Colab version
+# ============================================================
+
+import sys, subprocess, pkgutil, os, warnings, shutil, math
+warnings.filterwarnings("ignore")
+
+required = ["pennylane", "pyscf", "matplotlib", "imageio", "numpy", "PIL"]
+missing = [p for p in required if pkgutil.find_loader(p) is None]
+if missing:
+    subprocess.check_call([sys.executable, "-m", "pip", "install", "-q"] + missing)
+
+import numpy as np
+import imageio.v2 as imageio
+import matplotlib.pyplot as plt
+from matplotlib.patches import Circle
+from PIL import Image
+
+import pennylane as qml
+from pennylane import numpy as pnp
+from pyscf import gto, scf
+
+# ------------------------------------------------------------
+# CONFIG
+# ------------------------------------------------------------
+basis = "sto-3g"
+distance_target = 0.74
+steps = 100
+stepsize = 0.18
+gif_name = "hydrogen_big_clean.gif"
+frame_dir = "frames_hydrogen_big_clean"
+dpi = 160
+figsize = (16, 9)
+
+if os.path.exists(frame_dir):
+    shutil.rmtree(frame_dir)
+os.makedirs(frame_dir, exist_ok=True)
+
+plt.style.use("dark_background")
+
+# ------------------------------------------------------------
+# CLASSICAL HF
+# ------------------------------------------------------------
+def hf_energy(distance_angstrom, basis="sto-3g"):
+    mol = gto.M(
+        atom=f"H 0 0 0; H 0 0 {distance_angstrom}",
+        basis=basis,
+        unit="Angstrom",
+        charge=0,
+        spin=0,
+        verbose=0
+    )
+    mf = scf.RHF(mol)
+    return float(mf.kernel())
+
+hf_target = hf_energy(distance_target, basis=basis)
+
+# Optional smooth classical comparison curve
+def classical_reference_curve(i):
+    return hf_target + 0.55 * np.exp(-0.08 * i)
+
+# ------------------------------------------------------------
+# QUANTUM HAMILTONIAN
+# ------------------------------------------------------------
+symbols = ["H", "H"]
+coordinates = np.array([
+    [0.0, 0.0, 0.0],
+    [0.0, 0.0, distance_target]
+])
+
+molecule = qml.qchem.Molecule(
+    symbols,
+    coordinates,
+    charge=0,
+    mult=1,
+    basis_name=basis,
+    unit="Angstrom"
+)
+
+H, n_qubits = qml.qchem.molecular_hamiltonian(
+    molecule,
+    method="pyscf",
+    mapping="jordan_wigner"
+)
+
+dev = qml.device("default.qubit", wires=n_qubits)
+
+n_layers = 2
+shape = qml.StronglyEntanglingLayers.shape(n_layers=n_layers, n_wires=n_qubits)
+rng = np.random.default_rng(7)
+params = pnp.array(0.01 * rng.standard_normal(size=shape), requires_grad=True)
+
+@qml.qnode(dev, interface="autograd")
+def cost(weights):
+    qml.StronglyEntanglingLayers(weights, wires=range(n_qubits))
+    return qml.expval(H)
+
+opt = qml.AdamOptimizer(stepsize=stepsize)
+
+# ------------------------------------------------------------
+# HELPERS
+# ------------------------------------------------------------
+def smooth_limits(values, pad=0.10):
+    values = np.array(values, dtype=float)
+    vmin, vmax = np.min(values), np.max(values)
+    if np.isclose(vmin, vmax):
+        return vmin - 1, vmax + 1
+    span = vmax - vmin
+    return vmin - pad * span, vmax + pad * span
+
+def draw_hydrogen_panel(ax, progress):
+    """
+    Left panel:
+    early: H* + H*
+    late: H2
+    """
+    ax.set_xlim(0, 10)
+    ax.set_ylim(0, 7)
+    ax.axis("off")
+
+    # Surface
+    ax.plot([1.0, 9.0], [1.2, 1.2], lw=12, color="#475569", alpha=0.95)
+    ax.text(5.0, 0.45, "Catalyst surface (schematic)", ha="center", va="center",
+            fontsize=13, color="#CBD5E1")
+
+    # Surface sites
+    for x in np.linspace(2.0, 8.0, 5):
+        ax.add_patch(Circle((x, 1.75), 0.16, facecolor="#94A3B8", edgecolor="#E2E8F0", lw=1.2))
+
+    if progress < 0.55:
+        local = progress / 0.55
+        x1 = 3.0 + 1.3 * local
+        x2 = 7.0 - 1.3 * local
+        y = 3.2
+
+        for x in [x1, x2]:
+            ax.add_patch(Circle((x, y), 0.55, facecolor="#E6F7FF", edgecolor="#A5F3FC", lw=2.2))
+            ax.add_patch(Circle((x, y), 0.78, facecolor="#67E8F9", alpha=0.08, edgecolor=None))
+            ax.text(x, y, "H*", ha="center", va="center", fontsize=22, color="#001219", fontweight="bold")
+
+        ax.text(5.0, 5.9, "Adsorbed hydrogen approaching", ha="center",
+                fontsize=18, color="#E2E8F0", fontweight="bold")
+        ax.text(5.0, 5.35, "H*  +  H*  →", ha="center", fontsize=20, color="#BAE6FD")
+
+    else:
+        local = (progress - 0.55) / 0.45
+        y = 3.2 + 1.8 * local
+        x1, x2 = 4.45, 5.55
+
+        ax.plot([x1, x2], [y, y], lw=5, color="#A5F3FC", alpha=0.95)
+        ax.plot([x1, x2], [y, y], lw=10, color="#67E8F9", alpha=0.10)
+
+        for x in [x1, x2]:
+            ax.add_patch(Circle((x, y), 0.55, facecolor="#E6F7FF", edgecolor="#A5F3FC", lw=2.2))
+            ax.add_patch(Circle((x, y), 0.78, facecolor="#67E8F9", alpha=0.08, edgecolor=None))
+            ax.text(x, y, "H", ha="center", va="center", fontsize=22, color="#001219", fontweight="bold")
+
+        ax.text(5.0, 5.95, "Molecular hydrogen formation", ha="center",
+                fontsize=18, color="#FDE68A", fontweight="bold")
+        ax.text(5.0, 5.4, "→  H₂", ha="center", fontsize=24, color="#FDE68A", fontweight="bold")
+
+    ax.text(5.0, 6.45, "Hydrogen evolution inspired view", ha="center",
+            fontsize=16, color="#F8FAFC", fontweight="bold")
+
+# ------------------------------------------------------------
+# RUN VQE + RENDER
+# ------------------------------------------------------------
+vqe_energies = []
+errors = []
+frame_paths = []
+
+for step in range(steps):
+    params, _ = opt.step_and_cost(cost, params)
+    e_now = float(cost(params))
+    err = abs(e_now - hf_target)
+
+    vqe_energies.append(e_now)
+    errors.append(err)
+    progress = step / (steps - 1)
+
+    fig = plt.figure(figsize=figsize, facecolor="#020617")
+    gs = fig.add_gridspec(2, 2, height_ratios=[0.14, 0.86], width_ratios=[1.15, 1.45])
+
+    # Title
+    ax_title = fig.add_subplot(gs[0, :])
+    ax_title.axis("off")
+    ax_title.text(
+        0.5, 0.58,
+        "HYDROGEN: CLASSICAL vs QUANTUM",
+        ha="center", va="center",
+        fontsize=28, color="white", fontweight="bold"
+    )
+    ax_title.text(
+        0.5, 0.10,
+        "Classical target energy and variational quantum convergence for H₂",
+        ha="center", va="center",
+        fontsize=13, color="#CBD5E1"
+    )
+
+    # Left panel: Hydrogen
+    ax_left = fig.add_subplot(gs[1, 0], facecolor="#0B1220")
+    draw_hydrogen_panel(ax_left, progress)
+
+    # Right panel: Main graph
+    ax_right = fig.add_subplot(gs[1, 1], facecolor="#0B1220")
+    x = np.arange(1, len(vqe_energies) + 1)
+
+    ax_right.plot(x, vqe_energies, lw=3.0, label="Quantum (VQE)")
+    ax_right.plot(x, [classical_reference_curve(k) for k in x], "--", lw=2.2, label="Classical trend")
+    ax_right.axhline(hf_target, linestyle=":", lw=2.5, label="HF target")
+
+    ax_right.scatter(x[-1], vqe_energies[-1], s=130, zorder=5)
+
+    ax_right.set_title("Quantum convergence toward classical hydrogen energy",
+                       fontsize=18, color="white", pad=14, fontweight="bold")
+    ax_right.set_xlabel("Iteration", fontsize=14)
+    ax_right.set_ylabel("Energy (Hartree)", fontsize=14)
+
+    ymin, ymax = smooth_limits(vqe_energies + [hf_target] + [classical_reference_curve(k) for k in x])
+    ax_right.set_ylim(ymin, ymax)
+
+    ax_right.grid(alpha=0.18)
+    ax_right.tick_params(labelsize=12)
+    ax_right.legend(frameon=False, fontsize=12, loc="best")
+
+    # Error text
+    ax_right.text(
+        0.05, 0.90,
+        f"|ΔE| = {err:.4f} Ha",
+        transform=ax_right.transAxes,
+        fontsize=20, color="#F472B6", fontweight="bold"
+    )
+
+    # Hydrogen label inside graph
+    if progress < 0.55:
+        ax_right.text(
+            0.05, 0.80,
+            "Hydrogen state: H* + H*",
+            transform=ax_right.transAxes,
+            fontsize=15, color="#BAE6FD"
+        )
+    else:
+        ax_right.text(
+            0.05, 0.80,
+            "Hydrogen state: H₂ formed",
+            transform=ax_right.transAxes,
+            fontsize=15, color="#FDE68A", fontweight="bold"
+        )
+
+   
+    frame_path = os.path.join(frame_dir, f"frame_{step:03d}.png")
+    plt.savefig(frame_path, dpi=dpi, facecolor=fig.get_facecolor())
+    plt.close(fig)
+    frame_paths.append(frame_path)
+
+# ------------------------------------------------------------
+# NORMALIZE FRAMES
+# ------------------------------------------------------------
+images = [Image.open(fp).convert("RGB") for fp in frame_paths]
+base_size = images[0].size
+frames = []
+for im in images:
+    if im.size != base_size:
+        im = im.resize(base_size, Image.Resampling.LANCZOS)
+    frames.append(np.array(im))
+
+# ------------------------------------------------------------
+# SAVE GIF
+# ------------------------------------------------------------
+imageio.mimsave(gif_name, frames, duration=0.09, loop=0)
+
+print("GIF gerado com sucesso:", gif_name)
+print(f"HF target energy : {hf_target:.8f} Ha")
+print(f"Final VQE energy : {vqe_energies[-1]:.8f} Ha")
+print(f"Final |ΔE|       : {errors[-1]:.8f} Ha")
