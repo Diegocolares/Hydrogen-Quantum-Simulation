@@ -1,8 +1,8 @@
 # ⚛️ Quantum Hydrogen Simulation (VQE vs Classical)
 
 Hybrid quantum-classical simulation of molecular hydrogen (H₂) using the Variational Quantum Eigensolver (VQE), with direct comparison to classical electronic structure methods.
+<img src="assets/hydrogen_big_clean(1).gif" width="800">
 
----
 
 ## 🚀 Overview
 
