@@ -66,19 +66,9 @@ This project bridges **quantum computing and catalysis**, providing a visual and
 
 ---
 
-## 🎬 Example Output
-
-<p align="center">
-  <img src="assets/preview.gif" width="700">
-</p>
-
----
-
 ## 🧠 Key Insight
 
 > Classical methods define the energy landscape.  
 > Quantum algorithms learn it variationally.
 
 ---
-
-## 📁 Project Structure
