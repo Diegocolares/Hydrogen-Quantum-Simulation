@@ -54,6 +54,38 @@ This project bridges **quantum computing and catalysis**, providing a visual and
 4. Optimize quantum circuit parameters (VQE)
 5. Compare convergence behavior
 
+## ⚛️ Quantum System Representation
+
+The simulation of the hydrogen molecule (H₂) is performed using a reduced qubit representation derived from quantum chemistry principles.
+
+### System configuration
+
+- Molecule: H₂  
+- Electrons: 2  
+- Basis set: STO-3G  
+
+### Orbital structure
+
+- Spatial orbitals: 2  
+- Spin orbitals: 4  
+
+Using the Jordan–Wigner mapping:
+
+- Each spin orbital corresponds to one qubit  
+- Initial system size: **4 qubits**
+
+### Symmetry reduction
+
+By exploiting physical constraints:
+
+- Particle number conservation  
+- Spin symmetry  
+- Orbital reduction  
+
+the system is reduced to:
+
+> **2 effective qubits**
+
 ---
 
 ## 📊 Key Results
